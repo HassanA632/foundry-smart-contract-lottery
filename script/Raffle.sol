@@ -18,6 +18,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     //     ^^^ good practise, place contract name before error
     error Raffle__TransferFailed();
     error Raffle__RaffleNotOpen();
+    error Raffle__UpKeepNotNeeded(uint256 balance, uint256 playersLength);
 
     /*Type Declarations */
     enum RaffleState {
@@ -79,9 +80,40 @@ contract Raffle is VRFConsumerBaseV2Plus {
         emit RaffleEntered(msg.sender);
     }
 
-    function pickWinner() external {
-        if ((block.timestamp - s_lastTimeStamp) < I_INTERVAL) {
-            revert();
+    /**
+     *
+     * @dev This is function chainlink node will call to see if
+     * lottery is read to have a winner picked.
+     * The following should be true in order for upkeepNeeded to be true:
+     * 1. time interval has passed between raffle runes
+     * 2. lottery is open
+     * 3. contract has ETH
+     * 4. implicitly, subscription has LINK
+     * @param - ignored
+     * @return upkeepNeeded - true if its time to restart lottery
+     * @return - ignored
+     */
+    function checkUpkeep(
+        bytes memory /* performData */
+    ) public view returns (bool upkeepNeeded, bytes memory /* performData */) {
+        bool timeHasPassed = ((block.timestamp - s_lastTimeStamp) >=
+            I_INTERVAL);
+        bool isOpen = s_raffleState == RaffleState.OPEN;
+
+        bool hasBalance = address(this).balance > 0;
+
+        bool hasPlayers = s_players.length > 0;
+        upkeepNeeded = timeHasPassed && isOpen && hasBalance && hasPlayers;
+        return (upkeepNeeded, "");
+    }
+
+    function performUpkeep() external {
+        (bool upkeepNeeded, ) = checkUpkeep("");
+        if (!upkeepNeeded) {
+            revert Raffle__UpKeepNotNeeded(
+                address(this).balance,
+                s_players.length
+            );
         }
 
         s_raffleState = RaffleState.CALCULATING;
@@ -102,24 +134,31 @@ contract Raffle is VRFConsumerBaseV2Plus {
                 )
             });
 
-        uint256 requestId = s_vrfCoordinator.requestRandomWords(request);
+        s_vrfCoordinator.requestRandomWords(request);
     }
 
+    //CEI: Checks, Effects, Interactions Pattern
     function fulfillRandomWords(
-        uint256 requestId,
+        //Checks
+        // - requires, conditions etc
+
+        uint256, //requestId,
         uint256[] calldata randomWords
     ) internal override {
+        //Effect (internal contract state)
         uint256 indexOfWinner = randomWords[0] % s_players.length;
         address payable recentWinner = s_players[indexOfWinner];
         s_recentWinner = recentWinner;
         s_raffleState = RaffleState.OPEN;
         s_players = new address payable[](0);
         s_lastTimeStamp = block.timestamp;
+        emit WinnerPicked(s_recentWinner);
+
+        //Interaction (External contract interaction)
         (bool success, ) = recentWinner.call{value: address(this).balance}("");
         if (!success) {
             revert Raffle__TransferFailed();
         }
-        emit WinnerPicked(s_recentWinner);
     }
 
     function getEntranceFee() external view returns (uint256) {

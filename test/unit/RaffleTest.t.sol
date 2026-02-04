@@ -62,4 +62,18 @@ contract RafflrTets is Test {
         emit RaffleEntered(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
     }
+
+    function testDontAllowPlayersToEnterWhileRaffleIsCalculating() public {
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: entranceFee}();
+
+        // Set block time stamp through foundry cheatcode
+        vm.warp(block.timestamp + interval + 1);
+        vm.roll(block.number + 1); // Change block number
+        raffle.performUpkeep("");
+
+        vm.expectRevert(Raffle.Raffle__RaffleNotOpen.selector);
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: entranceFee}();
+    }
 }

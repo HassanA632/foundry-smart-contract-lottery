@@ -49,6 +49,7 @@ contract RafflrTets is Test {
     }
 
     function testRaffleRecordsPlayersWhenTheyEnter() public {
+        //Arrange
         vm.prank(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
         address playerRecorded = raffle.getPlayer(0);
@@ -64,6 +65,7 @@ contract RafflrTets is Test {
     }
 
     function testDontAllowPlayersToEnterWhileRaffleIsCalculating() public {
+        //Arrange
         vm.prank(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
 
@@ -77,9 +79,10 @@ contract RafflrTets is Test {
         raffle.enterRaffle{value: entranceFee}();
     }
 
-    /*=== CHECK UPKEEP ===*/
+    /*======= CHECK UPKEEP =======*/
 
     function testCheckUpkeepReturnsFalseIfItHasNoBalance() public {
+        //Arrange
         vm.warp(block.timestamp + interval + 1);
         vm.roll(block.number + 1);
 
@@ -88,6 +91,7 @@ contract RafflrTets is Test {
     }
 
     function testCheckUpkeepReturnsFalseIfRaffleIsntOpen() public {
+        //Arrange
         vm.prank(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
 
@@ -98,5 +102,42 @@ contract RafflrTets is Test {
         (bool upkeepNeeded, ) = raffle.checkUpkeep("");
 
         assert(!upkeepNeeded);
+    }
+
+    /*======= PERFORM UPKEEP =======*/
+
+    function testPerformUpkeepCanOnlyRunIfCheckUpkeepIsTrue() public {
+        //Arrange
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: entranceFee}();
+
+        vm.warp(block.timestamp + interval + 1);
+        vm.roll(block.number + 1);
+
+        //Act / Assert
+        raffle.performUpkeep("");
+    }
+
+    function testPerformUpkeepRevertsIfCheckUpkeepIsFalse() public {
+        //Arrange
+        uint256 currentBalance = 0;
+        uint256 numPlayers = 0;
+        Raffle.RaffleState rState = raffle.getRaffleState();
+
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: entranceFee}();
+        currentBalance = currentBalance + entranceFee;
+        numPlayers = 1;
+
+        //Act / Assert
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Raffle.Raffle__UpKeepNotNeeded.selector,
+                currentBalance,
+                numPlayers,
+                rState
+            )
+        );
+        raffle.performUpkeep("");
     }
 }
